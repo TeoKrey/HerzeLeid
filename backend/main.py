@@ -1,13 +1,32 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 import logging
 
 from backend.database import SessionLocal
-from backend.models import Song, Album
-
+from backend.models import Song, Album, Lyrics
 from backend.init_db import init_db
 
-app = FastAPI()
+from pydantic import BaseModel
 
+class SongResponse(BaseModel):
+    id: int
+    title: str
+    track_number: int
+    duration_seconds: int
+    album_id: int
+
+class AlbumResponse(BaseModel):
+    id: int
+    title: str
+    year: int
+    artist_id: int
+    songs: list[SongResponse]
+
+class LyricsResponse(BaseModel):
+    song_id: int
+    original_text: str
+    translated_text: str
+
+app = FastAPI()
 
 @app.on_event("startup")
 def on_startup() -> None:
@@ -56,5 +75,44 @@ def get_albums():
             }
             for album in albums
         ]
+    finally:
+        db.close()
+
+@app.get("/albums/{album_id}", response_model=AlbumResponse)
+def get_album(album_id: int):
+    db = SessionLocal()
+    try:
+        album = db.query(Album).filter(Album.id == album_id).first()
+        if album is None:
+            raise HTTPException(status_code=404, detail="Album not found")
+        return AlbumResponse(
+            id=album.id,
+            title=album.title,
+            year=album.year,
+            artist_id=album.artist_id,
+            songs=[
+                SongResponse(
+                    id=song.id,
+                    title=song.title,
+                    track_number=song.track_number
+                )
+                for song in album.songs
+            ]
+        )
+    finally:
+        db.close() 
+
+@app.get("/songs/{song_id}/lyrics", response_model=LyricsResponse)
+def get_song_lyrics(song_id: int):
+    db = SessionLocal()
+    try:
+        lyrics = db.query(Lyrics).filter(Lyrics.song_id == song_id).first()
+        if lyrics is None:
+            raise HTTPException(status_code=404, detail="Lyrics not found")
+        return LyricsResponse(
+            song_id=lyrics.song_id,
+            original_text=lyrics.original_text,
+            translated_text=lyrics.translated_text,
+        )
     finally:
         db.close()
